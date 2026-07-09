@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/ocr.ts": {
+      "maxDuration": 300
+    }
+  }
+}

@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-direct: #c75b7a;
+  --color-ebm: #2e86ab;
+  --color-formula: #e8973a;
+  --color-sleepy: #7a6fb3;
+  --color-blush: #fff7f9;
+}
+
+html {
+  background: var(--color-blush);
+}
