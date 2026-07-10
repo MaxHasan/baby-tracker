@@ -1,11 +1,11 @@
 # Baby Tracker
 
-A private, self-hosted baby-tracking web app for two parents on separate phones,
+A private, self-hosted baby-tracking web app for two or more parents on separate phones
 with realtime sync. Log feeds, pumping, sleep, diapers and growth; see a
 dashboard with intake vs. a weight-scaled target, formula share, breast-milk
 supply, sleep and diaper adequacy.
 
-Installs to the home screen as a PWA (no app store), runs free on Supabase +
+Installs to the home screen as a progressive web app (PWA), runs free on Supabase +
 Vercel, and every parent's data stays in **their own** Supabase project.
 
 ## Why it exists
