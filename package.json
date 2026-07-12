@@ -11,7 +11,7 @@
     "import:dry": "tsx scripts/import-csv.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.88.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@supabase/supabase-js": "^2.50.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -29,5 +29,19 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^1.0.0"
+  },
+  "overrides": {
+    "@vercel/node": {
+      "undici": "^6.27.0",
+      "path-to-regexp": "^6.3.0"
+    },
+    "@vercel/python-analysis": {
+      "js-yaml": "^4.2.0",
+      "minimatch": "^10.2.3",
+      "smol-toml": "^1.6.1"
+    },
+    "@vercel/static-config": {
+      "ajv": "^8.18.0"
+    }
   }
 }
