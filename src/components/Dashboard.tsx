@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Bar, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -10,59 +10,79 @@ import { COLORS, DIRECT_FEED_MEAN_KENT, DIRECT_ML_PER_FEED } from '../lib/types'
 interface Data {
   rows: DayRow[];
   hasWeighIn: boolean;
-  wet24: number; // rolling past-24h diaper counts
-  dirty24: number;
   formulaPct24: number | null; // formula share of intake over the past 24h
+  pumped24: number; // mL pumped over the rolling past 24h
 }
 
 export default function Dashboard({ child }: { child: Child }) {
   const [data, setData] = useState<Data | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const [feeds, pumps, diapers, sleeps, growth] = await Promise.all([
-        supabase!.from('feeds').select('*').eq('child_id', child.id),
-        supabase!.from('pumps').select('*').eq('child_id', child.id),
-        supabase!.from('diapers').select('*').eq('child_id', child.id),
-        supabase!.from('sleeps').select('*').eq('child_id', child.id),
-        supabase!.from('growth').select('*').eq('child_id', child.id),
-      ]);
-      const diaperRows = (diapers.data ?? []) as Diaper[];
-      const feedRows = (feeds.data ?? []) as Feed[];
-      const since24 = Date.now() - 24 * 3600 * 1000;
-      const recent = diaperRows.filter((d) => +new Date(d.ts) >= since24);
+  const load = useCallback(async () => {
+    const [feeds, pumps, diapers, sleeps, growth] = await Promise.all([
+      supabase!.from('feeds').select('*').eq('child_id', child.id),
+      supabase!.from('pumps').select('*').eq('child_id', child.id),
+      supabase!.from('diapers').select('*').eq('child_id', child.id),
+      supabase!.from('sleeps').select('*').eq('child_id', child.id),
+      supabase!.from('growth').select('*').eq('child_id', child.id),
+    ]);
+    const diaperRows = (diapers.data ?? []) as Diaper[];
+    const feedRows = (feeds.data ?? []) as Feed[];
+    const pumpRows = (pumps.data ?? []) as Pump[];
+    const since24 = Date.now() - 24 * 3600 * 1000;
 
-      // Formula share of estimated intake over the rolling past 24 hours.
-      const f24 = feedRows.filter((f) => +new Date(f.ts) >= since24);
-      const ml = (pred: (f: Feed) => boolean) =>
-        f24.filter(pred).reduce((a, f) => a + (f.volume_ml ?? 0), 0);
-      const formula24 = ml((f) => f.delivery === 'bottle' && f.substance === 'formula');
-      const ebm24 = ml((f) => f.delivery === 'bottle' && f.substance === 'breast_milk');
-      const directEst24 = f24.filter((f) => f.delivery === 'breast').length * DIRECT_ML_PER_FEED;
-      const total24 = formula24 + ebm24 + directEst24;
+    // Formula share of estimated intake over the rolling past 24 hours.
+    const f24 = feedRows.filter((f) => +new Date(f.ts) >= since24);
+    const ml = (pred: (f: Feed) => boolean) =>
+      f24.filter(pred).reduce((a, f) => a + (f.volume_ml ?? 0), 0);
+    const formula24 = ml((f) => f.delivery === 'bottle' && f.substance === 'formula');
+    const ebm24 = ml((f) => f.delivery === 'bottle' && f.substance === 'breast_milk');
+    const directEst24 = f24.filter((f) => f.delivery === 'breast').length * DIRECT_ML_PER_FEED;
+    const total24 = formula24 + ebm24 + directEst24;
 
-      setData({
-        hasWeighIn: (growth.data ?? []).length > 0,
-        wet24: recent.filter((d) => d.wet).length,
-        dirty24: recent.filter((d) => d.dirty).length,
-        formulaPct24: total24 ? Math.round((formula24 / total24) * 100) : null,
-        rows: dailyRollup({
-          feeds: feedRows,
-          pumps: (pumps.data ?? []) as Pump[],
-          diapers: diaperRows,
-          sleeps: (sleeps.data ?? []) as Sleep[],
-          growth: (growth.data ?? []) as Growth[],
-          birthWeightG: child.birth_weight_g,
-          fromDate: child.dob,
-          toDate: localDateKey(new Date().toISOString()),
-        }),
-      });
-    })();
+    setData({
+      hasWeighIn: (growth.data ?? []).length > 0,
+      formulaPct24: total24 ? Math.round((formula24 / total24) * 100) : null,
+      pumped24: pumpRows
+        .filter((p) => +new Date(p.ts) >= since24)
+        .reduce((a, p) => a + p.total_ml, 0),
+      rows: dailyRollup({
+        feeds: feedRows,
+        pumps: pumpRows,
+        diapers: diaperRows,
+        sleeps: (sleeps.data ?? []) as Sleep[],
+        growth: (growth.data ?? []) as Growth[],
+        birthWeightG: child.birth_weight_g,
+        fromDate: child.dob,
+        toDate: localDateKey(new Date().toISOString()),
+      }),
+    });
   }, [child]);
 
+  useEffect(() => {
+    void load();
+    // realtime + refetch when the tab regains focus: keep KPIs (and their
+    // rolling/day windows) current while the app stays open on a phone
+    const ch = supabase!
+      .channel('dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => void load())
+      .subscribe();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      void supabase!.removeChannel(ch);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [load]);
+
   if (!data) return <p className="pt-8 text-center text-slate-400">Crunching…</p>;
-  const { rows, hasWeighIn, wet24, dirty24, formulaPct24 } = data;
+  const { rows, hasWeighIn, formulaPct24, pumped24 } = data;
   const today = rows[rows.length - 1];
+  // Intake & diapers are calendar-day figures against daily targets, so their
+  // warnings are paced by how much of the local day has elapsed — a quiet
+  // morning shouldn't light every card red.
+  const dayFrac = (Date.now() - new Date().setHours(0, 0, 0, 0)) / 86400000;
   const chart = rows.slice(-30).map((r) => ({ ...r, day: r.date.slice(5).replace('-', '/') }));
 
   // Formula share: rolling 24h (headline), plus 7-day and all-time day-windows.
@@ -84,19 +104,20 @@ export default function Dashboard({ child }: { child: Child }) {
             ? `target ${today.targetMl} mL = ${(today.weightG / 1000).toFixed(2)} kg × 150${
                 hasWeighIn ? '' : ' (birth wt — add a weigh-in)'}`
             : undefined}
-          warn={!!today.targetMl && today.totalEstMl < today.targetMl * 0.8} />
+          warn={!!today.targetMl && today.totalEstMl < today.targetMl * dayFrac * 0.8} />
         <Kpi label="Formula % (24h)"
           value={formulaPct24 === null ? '—' : `${formulaPct24}%`}
           sub={`7-day ${f7 ?? '—'}% · all-time ${fAll ?? '—'}%`} />
-        <Kpi label="Diapers (last 24h)" value={`${wet24} 💧 / ${dirty24} 💩`}
-          sub="target ≥6 wet · ≥3 dirty"
-          warn={wet24 < 6 || dirty24 < 3} />
-        <Kpi label="Pumped today" value={`${today.pumpedMl} mL`}
+        <Kpi label="Diapers today" value={`${today.wet} 💧 / ${today.dirty} 💩`}
+          sub="target ≥6 wet · ≥3 dirty / day"
+          warn={today.wet < Math.floor(6 * dayFrac) || today.dirty < Math.floor(3 * dayFrac)} />
+        <Kpi label="Pumped (last 24h)" value={`${pumped24} mL`}
           sub={`7-day ${pumped7} mL`} />
       </div>
       <p className="-mt-2 px-1 text-[11px] text-slate-400">
-        Diaper targets are the newborn adequacy guide (≥6 wet, ≥3 dirty per 24h
-        after ~day 5); counts here are a rolling 24 hours, not the calendar day.
+        Intake &amp; diapers count the calendar day (warnings scale with the time
+        of day); formula % and pumped are rolling 24-hour windows. Diaper targets
+        are the newborn adequacy guide, applicable after ~day 5.
       </p>
 
       <ChartCard title="Daily intake by source vs target"
