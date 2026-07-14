@@ -125,7 +125,7 @@ export default function Dashboard({ child }: { child: Child }) {
         <ComposedChart data={chart} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
           <XAxis dataKey="day" fontSize={10} tickMargin={4} />
           <YAxis fontSize={10} />
-          <Tooltip />
+          <Tooltip content={<TotalTooltip />} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar dataKey="directEstMl" name="Direct (est)" stackId="a" fill={COLORS.direct} />
           <Bar dataKey="ebmMl" name="EBM" stackId="a" fill={COLORS.ebm} />
@@ -146,7 +146,7 @@ export default function Dashboard({ child }: { child: Child }) {
           <ComposedChart data={chart} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
             <XAxis dataKey="day" fontSize={10} tickMargin={4} />
             <YAxis fontSize={10} />
-            <Tooltip />
+            <Tooltip content={<TotalTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="directEstMl" name="Direct (est)" stackId="s" fill={COLORS.direct} />
             <Bar dataKey="pumpedLeftMl" name="Pump L" stackId="s" fill={COLORS.left} />
@@ -154,6 +154,36 @@ export default function Dashboard({ child }: { child: Child }) {
           </ComposedChart>
         )}
       </ChartCard>
+    </div>
+  );
+}
+
+/** Chart tooltip with a bold Total of the stacked bars, so the day is easy to
+ * compare against the italicized Target line (absent on the supply chart). */
+function TotalTooltip({ active, payload, label }: {
+  active?: boolean;
+  payload?: { name?: string; value?: number | string; color?: string;
+    dataKey?: string | number }[];
+  label?: string | number;
+}) {
+  if (!active || !payload?.length) return null;
+  const series = payload.filter((p) => p.dataKey !== 'targetMl');
+  const target = payload.find((p) => p.dataKey === 'targetMl');
+  const total = series.reduce((a, p) => a + (Number(p.value) || 0), 0);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white/95 p-2.5 text-xs shadow-md">
+      <div className="mb-1 font-semibold text-slate-500">{label}</div>
+      {series.map((p) => (
+        <div key={String(p.dataKey)} style={{ color: p.color }}>
+          {p.name} : {p.value}
+        </div>
+      ))}
+      <div className="mt-1 font-bold text-slate-700 underline underline-offset-2">
+        Total : {total}
+      </div>
+      {target && (
+        <div className="italic text-slate-500">{target.name} : {target.value}</div>
+      )}
     </div>
   );
 }
