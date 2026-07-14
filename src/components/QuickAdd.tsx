@@ -29,7 +29,8 @@ export default function QuickAdd({ childId }: { childId: string }) {
       <GrowthForm insert={insert} />
       <NotebookImport childId={childId} />
       <p className="pb-2 text-center text-xs text-slate-400">
-        Direct-breast volume is estimated later from minutes — log time, not mL.
+        Direct-breast volume is a modeled per-feed estimate (age-ramped) — just
+        log the session; minutes don't change the estimate.
       </p>
     </div>
   );

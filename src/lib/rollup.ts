@@ -1,5 +1,5 @@
 import type { Diaper, Feed, Growth, Pump, Sleep } from './types';
-import { DIRECT_ML_PER_FEED, TARGET_ML_PER_KG } from './types';
+import { directMlPerFeed, targetMlPerKg } from './types';
 
 export interface DayRow {
   date: string; // yyyy-mm-dd, local
@@ -43,9 +43,13 @@ export function dailyRollup(args: {
   sleeps: Sleep[];
   growth: Growth[];
   birthWeightG: number | null;
+  dob: string;
   fromDate: string;
   toDate: string;
 }): DayRow[] {
+  // Age in whole days on a given local date (dob and keys are yyyy-mm-dd).
+  const ageOn = (date: string) =>
+    Math.round((+new Date(date) - +new Date(args.dob)) / 86400000);
   const days = new Map<string, DayRow>();
   for (let d = new Date(args.fromDate); localDateKey(d.toISOString()) <= args.toDate; d.setDate(d.getDate() + 1)) {
     const key = localDateKey(d.toISOString());
@@ -54,7 +58,7 @@ export function dailyRollup(args: {
       date: key, directFeeds: 0, directMin: 0, directEstMl: 0, ebmMl: 0,
       formulaMl: 0, bottleMl: 0, totalEstMl: 0, wet: 0, dirty: 0, sleepMin: 0,
       pumpedMl: 0, pumpedLeftMl: 0, pumpedRightMl: 0, weightG: w,
-      targetMl: w ? Math.round((w / 1000) * TARGET_ML_PER_KG) : null,
+      targetMl: w ? Math.round((w / 1000) * targetMlPerKg(ageOn(key))) : null,
     });
   }
   const day = (ts: string) => days.get(localDateKey(ts));
@@ -98,8 +102,9 @@ export function dailyRollup(args: {
   }
 
   for (const d of days.values()) {
-    // Per-feed estimate (Kent 2006); duration is a poor linear predictor.
-    d.directEstMl = Math.round(d.directFeeds * DIRECT_ML_PER_FEED);
+    // Per-feed estimate (Kent 2006), age-ramped for the colostrum/transition
+    // period; duration is a poor linear predictor at any age.
+    d.directEstMl = Math.round(d.directFeeds * directMlPerFeed(ageOn(d.date)));
     d.bottleMl = d.ebmMl + d.formulaMl;
     d.totalEstMl = d.directEstMl + d.bottleMl;
   }

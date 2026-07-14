@@ -5,7 +5,9 @@ import {
 import { supabase } from '../lib/supabase';
 import { dailyRollup, localDateKey, type DayRow } from '../lib/rollup';
 import type { Child, Diaper, Feed, Growth, Pump, Sleep } from '../lib/types';
-import { COLORS, DIRECT_FEED_MEAN_KENT, DIRECT_ML_PER_FEED } from '../lib/types';
+import {
+  COLORS, DIRECT_FEED_MEAN_KENT, DIRECT_ML_PER_FEED, directMlPerFeed, targetMlPerKg,
+} from '../lib/types';
 
 interface Data {
   rows: DayRow[];
@@ -36,7 +38,9 @@ export default function Dashboard({ child }: { child: Child }) {
       f24.filter(pred).reduce((a, f) => a + (f.volume_ml ?? 0), 0);
     const formula24 = ml((f) => f.delivery === 'bottle' && f.substance === 'formula');
     const ebm24 = ml((f) => f.delivery === 'bottle' && f.substance === 'breast_milk');
-    const directEst24 = f24.filter((f) => f.delivery === 'breast').length * DIRECT_ML_PER_FEED;
+    const ageNow = (Date.now() - +new Date(child.dob)) / 86400000;
+    const directEst24 =
+      f24.filter((f) => f.delivery === 'breast').length * directMlPerFeed(ageNow);
     const total24 = formula24 + ebm24 + directEst24;
 
     setData({
@@ -52,6 +56,7 @@ export default function Dashboard({ child }: { child: Child }) {
         sleeps: (sleeps.data ?? []) as Sleep[],
         growth: (growth.data ?? []) as Growth[],
         birthWeightG: child.birth_weight_g,
+        dob: child.dob,
         fromDate: child.dob,
         toDate: localDateKey(new Date().toISOString()),
       }),
@@ -101,7 +106,8 @@ export default function Dashboard({ child }: { child: Child }) {
       <div className="grid grid-cols-2 gap-2">
         <Kpi label="Intake today (est)" value={`${today.totalEstMl} mL`}
           sub={today.targetMl && today.weightG
-            ? `target ${today.targetMl} mL = ${(today.weightG / 1000).toFixed(2)} kg × 150${
+            ? `target ${today.targetMl} mL = ${(today.weightG / 1000).toFixed(2)} kg × ${
+                targetMlPerKg((Date.now() - +new Date(child.dob)) / 86400000)}${
                 hasWeighIn ? '' : ' (birth wt — add a weigh-in)'}`
             : undefined}
           warn={!!today.targetMl && today.totalEstMl < today.targetMl * dayFrac * 0.8} />
@@ -121,7 +127,7 @@ export default function Dashboard({ child }: { child: Child }) {
       </p>
 
       <ChartCard title="Daily intake by source vs target"
-        note={`Pink = modeled direct-breast estimate (${DIRECT_ML_PER_FEED} mL/feed, ±40%): direct intake can't be measured. Basis: Kent et al. 2006, mean ${DIRECT_FEED_MEAN_KENT} mL/feed.`}>
+        note={`Pink = modeled direct-breast estimate (${DIRECT_ML_PER_FEED} mL/feed once established, ramped down over days 0–14 for colostrum/transition; ±40%): direct intake can't be measured. Basis: Kent et al. 2006, mean ${DIRECT_FEED_MEAN_KENT} mL/feed. Target ramps 60→150 mL/kg over week 1.`}>
         <ComposedChart data={chart} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
           <XAxis dataKey="day" fontSize={10} tickMargin={4} />
           <YAxis fontSize={10} />
